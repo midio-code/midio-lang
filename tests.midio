@@ -1,0 +1,57 @@
+type User {
+	name: Text
+	email: Email
+	age: Number
+}
+
+context Authenticated {
+	current_user: User
+}
+
+declare previous_unique_month(Month): Month
+
+let previousMonth = previous_unique_month(unique_month(current_user))
+
+startNewSubscriptionPeriod {
+	requires_context Authenticated
+	input subscription: Subscription
+	input usage: DataUsagePeriod
+
+	let dlf = dataLeftOver(subscription, usage)
+	SubscriptionPeriod(CREATE, dlf, current_user)
+}
+
+// An interface implicitly implemented for all types that are Entities
+implicit interface Store of T where T is Entity {
+	type Action {
+		GET, SET, DELETE
+	}
+	comptime input action: Action
+	switch (action) {
+		GET {
+			input fieldsOf(T)
+			output result: T or [T]
+		}
+		SET {
+			input key: keysOf(T)
+			input newValue: T
+		}
+		DELETE {
+			input key: keysOf(T)
+		}
+	}
+}
+
+startNewSubscriptionPeriod(
+	subscription: SubscriptionPeriod(GET, previousMonth, current_user)
+	usage: DataUsagePeriod(GET, previousMonth, current_user)
+)
+
+dataLeftOver {
+	input sub: Subscription
+	input usage: DataUsagePeriod
+
+	output result: Number
+
+	result = ((sub.includedData + sub.rolledOverData) - usage.usage) |> lowest
+}
