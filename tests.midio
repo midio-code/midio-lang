@@ -12,7 +12,8 @@ declare previous_unique_month(Month): Month
 
 let previousMonth = previous_unique_month(unique_month(current_user))
 
-startNewSubscriptionPeriod {
+// Only impure functions are allowed to use other impure functions or use contexts
+impure startNewSubscriptionPeriod {
 	requires_context Authenticated
 	input subscription: Subscription
 	input usage: DataUsagePeriod
@@ -23,6 +24,7 @@ startNewSubscriptionPeriod {
 
 // An interface implicitly implemented for all types that are Entities
 implicit interface Store of T where T is Entity {
+	impure! // the impure! statement states that this interface makes the implementer impure
 	type Action {
 		GET, SET, DELETE
 	}
@@ -47,11 +49,73 @@ startNewSubscriptionPeriod(
 	usage: DataUsagePeriod(GET, previousMonth, current_user)
 )
 
-dataLeftOver {
+// dataLeftOver is a pure function, and thus cannot access impure functions or any context
+pure dataLeftOver {
 	input sub: Subscription
 	input usage: DataUsagePeriod
 
 	output result: Number
 
-	result = ((sub.includedData + sub.rolledOverData) - usage.usage) |> lowest
+	result = lowest((sub.includedData + sub.rolledOverData) - usage.usage)
+}
+
+// ============== BRANCHING ===================
+
+type Direction {
+	North, East, South, West
+}
+
+pure getDirection {
+	input angle: NumberRange(0, 360)
+	output result: Direction
+	if angle >= 0 and angle < 90 {
+		result = North
+	} else if angle >= 90 and angle < 180 {
+		result = East
+	} else if angle >= 180 and angle < 270 {
+		result = South
+	} else {
+		result = West
+	}
+}
+
+switch getDirection(123) {
+	North {
+		...
+	}
+	East {
+		...
+	}
+	South {
+		...
+	}
+	West {
+		...
+	}
+}
+
+// ========== ERROR HANDLING ==============
+
+// Calling GET on a type without any further inputs returns all instances of that type
+// the type here is User(GET) -> Result<[User], Error>
+case User(GET) {
+	// First item specifies the matched variant, and the second a name which its content is bound to.
+	Ok users {
+		// users here contains the list of all users
+	}
+	Err error {
+		// error contains an error type with additional information about what whent wrong.
+	}
+}
+
+// Implicitly combining errors
+getUsersAndSubscriptions {
+	output users: [User]
+	output subscriptions: [Subscription]
+
+	users = User(GET)
+	subscriptions = Subscription(GET)
+
+	// Since User and Subscription can return an error, getUsersAndSubscriptions type will actually
+	// become () -> Result<(users: [User], subscriptions: [Subscrioption]), Error>
 }
