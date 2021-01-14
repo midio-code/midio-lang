@@ -18,7 +18,7 @@ impure startNewSubscriptionPeriod {
 	input subscription: Subscription
 	input usage: DataUsagePeriod
 
-	let dlf = dataLeftOver(subscription, usage)
+	let dlf <- dataLeftOver(subscription, usage)
 	SubscriptionPeriod(CREATE, dlf, current_user)
 }
 
@@ -56,10 +56,18 @@ pure dataLeftOver {
 
 	output result: Number
 
-	result = lowest((sub.includedData + sub.rolledOverData) - usage.usage)
+	result <- lowest((sub.includedData + sub.rolledOverData) - usage.usage)
 }
 
+// ======== operators =============
+
+sink <- source : binding operator
+source -> sink : inverted binding operator
+sink << value : push operator
+value >> sink : inverted push operator
+
 // ============== BRANCHING ===================
+
 
 type Direction {
 	North, East, South, West
@@ -69,28 +77,24 @@ pure getDirection {
 	input angle: NumberRange(0, 360)
 	output result: Direction
 	if angle >= 0 and angle < 90 {
-		result = North
+		result << North
 	} else if angle >= 90 and angle < 180 {
-		result = East
+		result << East
 	} else if angle >= 180 and angle < 270 {
-		result = South
+		result << South
 	} else {
-		result = West
+		result << West
 	}
 }
 
-switch getDirection(123) {
-	North {
-		...
-	}
-	East {
-		...
-	}
-	South {
-		...
-	}
-	West {
-		...
+pure getDirection {
+	input angle: NumberRange(0, 360)
+	output result: Direction
+	result <- {
+		if angle >= 0 and angle < 90 { North }
+		else if angle >= 90 and angle < 180 { East }
+		else if angle >= 180 and angle < 270 { South }
+		else { West }
 	}
 }
 
@@ -109,13 +113,24 @@ case User(GET) {
 }
 
 // Implicitly combining errors
-getUsersAndSubscriptions {
+impure getUsersAndSubscriptions {
 	output users: [User]
 	output subscriptions: [Subscription]
 
-	users = User(GET)
-	subscriptions = Subscription(GET)
+	users <- User(GET) // Result<[User], Error>
+	subscriptions <- Subscription(GET)
 
 	// Since User and Subscription can return an error, getUsersAndSubscriptions type will actually
 	// become () -> Result<(users: [User], subscriptions: [Subscrioption]), Error>
+}
+
+// Functions and such
+
+impure startNewSubscriptionPeriod {
+	requires_context Authenticated
+	input subscription: Subscription
+	input usage: DataUsagePeriod
+
+	let dlf = dataLeftOver(subscription, usage)
+	SubscriptionPeriod(CREATE, dlf, current_user)
 }
