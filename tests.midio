@@ -28,10 +28,14 @@ implicit interface Store of T where T is Entity {
 	type Action {
 		GET, SET, DELETE
 	}
+
 	comptime input action: Action
 	switch (action) {
 		GET {
 			input fieldsOf(T)
+
+			// We need to infer if this is a T or [T] somehow
+			// The simplest option would be to have them as separate operations
 			output result: T or [T]
 		}
 		SET {
@@ -48,6 +52,51 @@ startNewSubscriptionPeriod(
 	subscription: SubscriptionPeriod(GET, previousMonth, current_user)
 	usage: DataUsagePeriod(GET, previousMonth, current_user)
 )
+
+// ======
+// Same as the above, but each store operation is a separate function.
+// We can still represent these differently in the UI.
+// ======
+
+// Read operations:
+
+get(E: Entity) {
+	input key: Key(E)
+	output result: Result(Maybe(T), GetError)
+}
+
+// How do we represent filters?
+// How would you build a dynamic filter UI?
+filter(E: Entity, F: Filter(E)) {
+	input filter: Filter(E)
+	output result: Result(List(E), FilterError)
+}
+
+// Write operations:
+
+// Error if entity already exists
+create(E: Entity) {
+	input entity: E
+	output result: Result(E, InsertError)
+}
+
+// Error if entity does not already exist
+update(E: Entity) {
+	input entity: E
+	output result: Result(E, UpdateError)
+}
+
+// Create entity, or update if already exists
+createOrUpdate(E: Entity) {
+	input entity: E
+	output result: Result(E, CreateOrUpdateError)
+}
+
+startNewSubscriptionPeriod {
+	let key <- (previousMonth, current_user)
+	subscription <- get(SubscriptionPeriod) { key <- key }
+	usage        <- get(DataUsagePeriod)    { key <- key }
+}
 
 // dataLeftOver is a pure function, and thus cannot access impure functions or any context
 pure dataLeftOver {
@@ -108,7 +157,7 @@ case User(GET) {
 		// users here contains the list of all users
 	}
 	Err error {
-		// error contains an error type with additional information about what whent wrong.
+		// error contains an error type with additional information about what went wrong.
 	}
 }
 
@@ -121,7 +170,7 @@ impure getUsersAndSubscriptions {
 	subscriptions <- Subscription(GET)
 
 	// Since User and Subscription can return an error, getUsersAndSubscriptions type will actually
-	// become () -> Result<(users: [User], subscriptions: [Subscrioption]), Error>
+	// become () -> Result<(users: [User], subscriptions: [Subscription]), Error>
 }
 
 // Functions and such
