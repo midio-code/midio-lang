@@ -62,7 +62,7 @@ startNewSubscriptionPeriod(
 
 get(E: Entity) {
 	input key: Key(E)
-	output result: Result(Maybe(T), GetError)
+	output result: Result(Maybe(E), GetError)
 }
 
 // How do we represent filters?
