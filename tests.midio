@@ -1,185 +1,75 @@
-type User {
-	name: Text
-	email: Email
-	age: Number
+node Constant<T>() -> [value: T] {
+   value: T
 }
 
-context Authenticated {
-	current_user: User
+let test_const = Constant<Number>(value: 123)
+
+type Json = Map | List | String | Number | Bool
+
+node ParseJSON(input: String) -> [json: Json]
+node JSONStringify(input: Json) -> [result: String]
+
+type Resource = String
+
+type(FilePath) Path = String
+
+node StaticResource() -> [resource: Resource] {
+    path: Path
 }
 
-declare previous_unique_month(Month): Month
-
-let previousMonth = previous_unique_month(unique_month(current_user))
-
-// Only impure functions are allowed to use other impure functions or use contexts
-impure startNewSubscriptionPeriod {
-	requires_context Authenticated
-	input subscription: Subscription
-	input usage: DataUsagePeriod
-
-	let dlf <- dataLeftOver(subscription, usage)
-	SubscriptionPeriod(CREATE, dlf, current_user)
+node FilePath() -> [path: Path] {
+    path: Path
 }
 
-// An interface implicitly implemented for all types that are Entities
-implicit interface Store of T where T is Entity {
-	impure! // the impure! statement states that this interface makes the implementer impure
-	type Action {
-		GET, SET, DELETE
-	}
+node ReadFile(input: Path) -> [content: String]
 
-	comptime input action: Action
-	switch (action) {
-		GET {
-			input fieldsOf(T)
+node Logger(input: Any) -> []
+node If(pred: Bool) -> [then: Unit, else: Unit]
+node ForEach(items: List) -> [item: Any]
 
-			// We need to infer if this is a T or [T] somehow
-			// The simplest option would be to have them as separate operations
-			output result: T or [T]
-		}
-		SET {
-			input key: keysOf(T)
-			input newValue: T
-		}
-		DELETE {
-			input key: keysOf(T)
-		}
-	}
+
+type(Code) Code = String
+node Script(input: Any) -> [output: Any] {
+    source: Code = \"fn run(value) {\n\n}\"
 }
 
-startNewSubscriptionPeriod(
-	subscription: SubscriptionPeriod(GET, previousMonth, current_user)
-	usage: DataUsagePeriod(GET, previousMonth, current_user)
-)
-
-// ======
-// Same as the above, but each store operation is a separate function.
-// We can still represent these differently in the UI.
-// ======
-
-// Read operations:
-
-get(E: Entity) {
-	input key: Key(E)
-	output result: Result(Maybe(E), GetError)
+type Request = {
+    url: String
 }
 
-// How do we represent filters?
-// How would you build a dynamic filter UI?
-filter(E: Entity, F: Filter(E)) {
-	input filter: Filter(E)
-	output result: Result(List(E), FilterError)
+type Response = {
+    body: String
 }
 
-// Write operations:
-
-// Error if entity already exists
-create(E: Entity) {
-	input entity: E
-	output result: Result(E, InsertError)
+node HttpRequest(request: Null) -> [body: String] {
+    url: String = \"https://api.agify.io?name=bella\"
 }
 
-// Error if entity does not already exist
-update(E: Entity) {
-	input entity: E
-	output result: Result(E, UpdateError)
+node HttpEndpoint() -> [request: Request] {
+    path: String = \"/hello\"
 }
 
-// Create entity, or update if already exists
-createOrUpdate(E: Entity) {
-	input entity: E
-	output result: Result(E, CreateOrUpdateError)
-}
+node HttpResponse(response: Response) -> []
 
-startNewSubscriptionPeriod {
-	let key <- (previousMonth, current_user)
-	subscription <- get(SubscriptionPeriod) { key <- key }
-	usage        <- get(DataUsagePeriod)    { key <- key }
-}
+let val = Constant<Bool>(value: false)
+let rhaiLoggerTrue = Script(source: \"fn run() { 42 }\")
+let rhaiLoggerFalse = Script(source: \"fn run() { 13371337 }\")
+let if_true = If()
+val.value -> if_true.input
+if_true.then -> rhaiLoggerTrue.input
+if_true.else -> rhaiLoggerFalse.input
+let endpoint1 = HttpEndpoint()
+let response1 = HttpResponse()
+let scrip1 = Script(source: \"fn run(value) {
+   #{
+      body: \\\"kristian here\\\"
+   }
+}\")
+endpoint1.request -> scrip1.input
+scrip1.output -> response1.params
 
-// dataLeftOver is a pure function, and thus cannot access impure functions or any context
-pure dataLeftOver {
-	input sub: Subscription
-	input usage: DataUsagePeriod
-
-	output result: Number
-
-	result <- lowest((sub.includedData + sub.rolledOverData) - usage.usage)
-}
-
-// ======== operators =============
-
-sink <- source : binding operator
-source -> sink : inverted binding operator
-sink << value : push operator
-value >> sink : inverted push operator
-
-// ============== BRANCHING ===================
-
-
-type Direction {
-	North, East, South, West
-}
-
-pure getDirection {
-	input angle: NumberRange(0, 360)
-	output result: Direction
-	if angle >= 0 and angle < 90 {
-		result << North
-	} else if angle >= 90 and angle < 180 {
-		result << East
-	} else if angle >= 180 and angle < 270 {
-		result << South
-	} else {
-		result << West
-	}
-}
-
-pure getDirection {
-	input angle: NumberRange(0, 360)
-	output result: Direction
-	result <- {
-		if angle >= 0 and angle < 90 { North }
-		else if angle >= 90 and angle < 180 { East }
-		else if angle >= 180 and angle < 270 { South }
-		else { West }
-	}
-}
-
-// ========== ERROR HANDLING ==============
-
-// Calling GET on a type without any further inputs returns all instances of that type
-// the type here is User(GET) -> Result<[User], Error>
-case User(GET) {
-	// First item specifies the matched variant, and the second a name which its content is bound to.
-	Ok users {
-		// users here contains the list of all users
-	}
-	Err error {
-		// error contains an error type with additional information about what went wrong.
-	}
-}
-
-// Implicitly combining errors
-impure getUsersAndSubscriptions {
-	output users: [User]
-	output subscriptions: [Subscription]
-
-	users <- User(GET) // Result<[User], Error>
-	subscriptions <- Subscription(GET)
-
-	// Since User and Subscription can return an error, getUsersAndSubscriptions type will actually
-	// become () -> Result<(users: [User], subscriptions: [Subscription]), Error>
-}
-
-// Functions and such
-
-impure startNewSubscriptionPeriod {
-	requires_context Authenticated
-	input subscription: Subscription
-	input usage: DataUsagePeriod
-
-	let dlf = dataLeftOver(subscription, usage)
-	SubscriptionPeriod(CREATE, dlf, current_user)
-}
+let httpRequest_0 = HttpRequest()
+let parseJSON_1 = ParseJSON()
+let script_2 = Script(source: \"fn run(value) {\nvalue.age \n}\")
+httpRequest_0.body -> parseJSON_1.input
+parseJSON_1.json -> script_2.input
